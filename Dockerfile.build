@@ -1,0 +1,35 @@
+FROM lcr.loongnix.cn/library/debian:forky-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    wget \
+    git \
+    zip \
+    cmake \
+    build-essential \
+    libboost-all-dev \
+    libeigen3-dev \
+    libxml2-dev \
+    libnetcdf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 截止到搭建该ci时(v9.4.0)，ml-cpp 对 boost 的需求一直是 1.86.0
+# 库列表也始终一致，见 ml-cpp/cmake/variables.cmake
+RUN wget -O /tmp/boost.tar.gz --quiet --show-progress https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-cmake.tar.gz \
+    && mkdir -p /tmp/boost \
+    && tar -xzf /tmp/boost.tar.gz -C /tmp/boost --strip-components=1
+    
+WORKDIR /tmp/boost
+RUN  cmake -B build -S . \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DBUILD_SHARED_LIBS=ON \
+      -DBUILD_TESTING=OFF \
+      -DBOOST_INCLUDE_LIBRARIES="iostreams;filesystem;program_options;regex;date_time;log;thread;test;json;container;system" \
+     && cmake --build build -j $(nproc) \
+     && cmake --install build \
+     && rm -rf /tmp/*
+
+WORKDIR /
+
+CMD ["/bin/bash"]
