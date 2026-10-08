@@ -3,32 +3,47 @@ FROM lcr.loongnix.cn/library/debian:forky-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     wget \
+    bzip2 \
     git \
     zip \
     cmake \
     build-essential \
-    libboost-all-dev \
     libeigen3-dev \
     libxml2-dev \
     libnetcdf-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 截止到搭建该ci时(v9.4.0)，ml-cpp 对 boost 的需求一直是 1.86.0
-# 库列表也始终一致，见 ml-cpp/cmake/variables.cmake
-RUN wget -O /tmp/boost.tar.gz --quiet --show-progress https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-cmake.tar.gz \
-    && mkdir -p /tmp/boost \
-    && tar -xzf /tmp/boost.tar.gz -C /tmp/boost --strip-components=1
-    
-WORKDIR /tmp/boost
-RUN  cmake -B build -S . \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=/usr/local \
-      -DBUILD_SHARED_LIBS=ON \
-      -DBUILD_TESTING=OFF \
-      -DBOOST_INCLUDE_LIBRARIES="iostreams;filesystem;program_options;regex;date_time;log;thread;test;json;container;system" \
-     && cmake --build build -j $(nproc) \
-     && cmake --install build \
-     && rm -rf /tmp/*
+# ml-cpp 固定依赖 Boost 1.86.0，见 ml-cpp/cmake/variables.cmake 中的
+#   find_package(Boost 1.86.0 CONFIG EXACT REQUIRED ...)
+#
+# Boost 按上游 dev-tools/docker/linux_image/Dockerfile 的方式，用 b2 的 versioned
+# 布局完整安装到 /usr/local/gcc133
+RUN cd /tmp && \
+    wget --quiet -O - https://archives.boost.io/release/1.86.0/source/boost_1_86_0.tar.bz2 | tar jxf - && \
+    cd boost_1_86_0 && \
+    ./bootstrap.sh --without-libraries=context,coroutine,graph_parallel,mpi,python --without-icu && \
+    sed -i -e 's/{13ul/{3ul, 13ul/' boost/unordered/detail/prime_fmod.hpp && \
+    ./b2 -j"$(nproc)" --layout=versioned --disable-icu pch=off optimization=speed inlining=full \
+        define=BOOST_MATH_NO_LONG_DOUBLE_MATH_FUNCTIONS \
+        define=BOOST_LOG_WITHOUT_DEBUG_OUTPUT \
+        define=BOOST_LOG_WITHOUT_EVENT_LOG \
+        define=BOOST_LOG_WITHOUT_SYSLOG \
+        define=BOOST_LOG_WITHOUT_IPC \
+        define=_FORTIFY_SOURCE=2 \
+        cxxflags='-std=gnu++17 -fstack-protector -march=loongarch64 -mabi=lp64d' \
+        cflags='-D__STDC_FORMAT_MACROS' \
+        linkflags='-std=gnu++17 -Wl,-z,relro -Wl,-z,now' && \
+    ./b2 install --prefix=/usr/local/gcc133 --layout=versioned --disable-icu pch=off optimization=speed inlining=full \
+        define=BOOST_MATH_NO_LONG_DOUBLE_MATH_FUNCTIONS \
+        define=BOOST_LOG_WITHOUT_DEBUG_OUTPUT \
+        define=BOOST_LOG_WITHOUT_EVENT_LOG \
+        define=BOOST_LOG_WITHOUT_SYSLOG \
+        define=BOOST_LOG_WITHOUT_IPC \
+        define=_FORTIFY_SOURCE=2 \
+        cxxflags='-std=gnu++17 -fstack-protector -march=loongarch64 -mabi=lp64d' \
+        cflags='-D__STDC_FORMAT_MACROS' \
+        linkflags='-std=gnu++17 -Wl,-z,relro -Wl,-z,now' && \
+    cd / && rm -rf /tmp/boost_1_86_0
 
 WORKDIR /
 

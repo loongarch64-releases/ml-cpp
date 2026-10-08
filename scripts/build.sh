@@ -45,7 +45,9 @@ build()
     set +u # 暂时关闭严格检查，避免 set_env.sh 配置失败
     . ./set_env.sh
     set -u
-    cmake -B cmake-build-relwithdebinfo
+    # Boost 1.86 由镜像装在 /usr/local/gcc133(b2 versioned 布局)，该路径不在 CMake
+    # 默认搜索前缀里，显式指定，避免 find_package(Boost ... CONFIG EXACT) 找不到
+    cmake -B cmake-build-relwithdebinfo -DBoost_ROOT=/usr/local/gcc133
     cmake --build cmake-build-relwithdebinfo --target install -j$(nproc)
 
     popd
